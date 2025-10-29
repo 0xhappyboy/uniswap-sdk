@@ -1,7 +1,8 @@
 use crate::factory::Factory;
 use crate::price::Price;
-use crate::{EvmClient, EvmError, UniswapConfig};
+use crate::{Evm, EvmError, UniswapConfig};
 use ethers::types::{Address, U256};
+use evm_client::EvmType;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -74,29 +75,29 @@ pub struct LiquidityPoolInfo {
 impl LiquidityPoolInfo {}
 
 pub struct LiquidityPoolFinder {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     price: Arc<Price>,
     factory: Arc<Factory>,
 }
 
 impl LiquidityPoolFinder {
-    pub fn new(client: Arc<EvmClient>) -> Self {
+    pub fn new(evm: Arc<Evm>) -> Self {
         Self {
-            client: client.clone(),
-            price: Arc::new(Price::new(client.clone())),
-            factory: Arc::new(Factory::new(client)),
+            evm: evm.clone(),
+            price: Arc::new(Price::new(evm.clone())),
+            factory: Arc::new(Factory::new(evm)),
         }
     }
 
     pub async fn find_liquidity_pools(
         &self,
         token_address: Address,
-        chain: crate::EvmType,
+        evm_type: EvmType,
     ) -> Result<Vec<LiquidityPoolInfo>, EvmError> {
         let mut all_pools = Vec::new();
-        let v2_pools = self.find_v2_pools(token_address, chain).await?;
+        let v2_pools = self.find_v2_pools(token_address, evm_type).await?;
         all_pools.extend(v2_pools);
-        let v3_pools = self.find_v3_pools(token_address, chain).await?;
+        let v3_pools = self.find_v3_pools(token_address, evm_type).await?;
         all_pools.extend(v3_pools);
         all_pools.sort_by(|a, b| b.tvl.partial_cmp(&a.tvl).unwrap());
         Ok(all_pools)
@@ -209,7 +210,7 @@ impl LiquidityPoolFinder {
 
     async fn get_common_tokens(&self, chain: crate::EvmType) -> Vec<Address> {
         match chain {
-            crate::EvmType::Ethereum => vec![
+            crate::EvmType::ETHEREUM_MAINNET => vec![
                 "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     .parse()
                     .unwrap(),
@@ -223,7 +224,7 @@ impl LiquidityPoolFinder {
                     .parse()
                     .unwrap(),
             ],
-            crate::EvmType::Bsc => vec![
+            crate::EvmType::BSC_MAINNET => vec![
                 "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
                     .parse()
                     .unwrap(),

@@ -12,11 +12,13 @@ use crate::farm::FarmService;
 use crate::router::Router;
 use crate::tool::address::str_to_address;
 use crate::tool::cal_price_from_sqrt_price_x96;
-use crate::types::{EvmType, PairCreatedEvent, SwapEvent, TickInfo, V4PoolInfo, V4PositionInfo};
-use ethers::providers::{Http, Middleware, Provider};
-use ethers::signers::{LocalWallet, Signer};
+use crate::types::{PairCreatedEvent, SwapEvent, TickInfo, V4PoolInfo, V4PositionInfo};
+use ethers::providers::{Middleware, Provider};
+use ethers::signers::Signer;
 use ethers::types::Bytes;
 use ethers::types::{Address, H256, U256};
+use evm_client::EvmType;
+use evm_sdk::Evm;
 use std::sync::Arc;
 pub mod analyze;
 pub mod factory;
@@ -26,111 +28,34 @@ pub mod risk;
 pub mod router;
 use crate::types::EvmError;
 
-/// EVM Client for interacting with various EVM chains
-#[derive(Clone)]
-pub struct EvmClient {
-    pub provider: Arc<Provider<Http>>,
-    pub chain: EvmType,
-    pub wallet: Option<LocalWallet>,
-}
-
-impl EvmClient {
-    /// Create a new EVM client without wallet
-    pub async fn new(chain: EvmType) -> Result<Self, EvmError> {
-        let rpc_url = match chain {
-            EvmType::Ethereum => global::rpc::ETHEREUM_RPC,
-            EvmType::Arb => global::rpc::ARB_RPC,
-            EvmType::Bsc => global::rpc::BSC_RPC,
-            EvmType::Base => global::rpc::BASE_RPC,
-            EvmType::HyperEVM => global::rpc::HYPEREVM_RPC,
-            EvmType::Plasma => global::rpc::PLASMA_RPC,
-        };
-        if rpc_url.is_empty() {
-            return Err(EvmError::ConfigError("RPC URL not configured".to_string()));
-        }
-        let provider = Provider::<Http>::try_from(rpc_url)
-            .map_err(|e| EvmError::ConnectionError(format!("Failed to connect to RPC: {}", e)))?;
-        Ok(Self {
-            provider: Arc::new(provider),
-            chain,
-            wallet: None,
-        })
-    }
-
-    /// Create a new EVM client with wallet
-    pub async fn with_wallet(chain: EvmType, private_key: &str) -> Result<Self, EvmError> {
-        let rpc_url = match chain {
-            EvmType::Ethereum => global::rpc::ETHEREUM_RPC,
-            EvmType::Arb => global::rpc::ARB_RPC,
-            EvmType::Bsc => global::rpc::BSC_RPC,
-            EvmType::Base => global::rpc::BASE_RPC,
-            EvmType::HyperEVM => global::rpc::HYPEREVM_RPC,
-            EvmType::Plasma => global::rpc::PLASMA_RPC,
-        };
-        if rpc_url.is_empty() {
-            return Err(EvmError::ConfigError("RPC URL not configured".to_string()));
-        }
-        let provider = Provider::<Http>::try_from(rpc_url)
-            .map_err(|e| EvmError::ConnectionError(format!("Failed to connect to RPC: {}", e)))?;
-        let wallet: LocalWallet = private_key
-            .parse()
-            .map_err(|e| EvmError::WalletError(format!("Failed to parse private key: {}", e)))?;
-        Ok(Self {
-            provider: Arc::new(provider),
-            chain,
-            wallet: Some(wallet),
-        })
-    }
-
-    /// Get logs by filter
-    pub async fn get_logs(
-        &self,
-        filter: ethers::types::Filter,
-    ) -> Result<Vec<ethers::types::Log>, EvmError> {
-        self.provider
-            .get_logs(&filter)
-            .await
-            .map_err(|e| EvmError::RpcError(format!("Failed to get logs: {}", e)))
-    }
-
-    /// Get block number
-    pub async fn get_block_number(&self) -> Result<u64, EvmError> {
-        self.provider
-            .get_block_number()
-            .await
-            .map_err(|e| EvmError::RpcError(format!("Failed to get block number: {}", e)))
-            .map(|num| num.as_u64())
-    }
-}
-
 /// Service for interacting with Uniswap V2 and V3 protocols
 pub struct UniswapService {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     router: Router,
 }
 
 impl UniswapService {
     /// Create a new UniswapService instance
-    pub fn new(client: Arc<EvmClient>) -> Self {
+    pub fn new(evm: Arc<Evm>) -> Self {
         Self {
-            client: client.clone(),
-            router: Router::new(client),
+            evm: evm.clone(),
+            router: Router::new(evm),
         }
     }
 
     /// Get farm service instance
     pub fn farm_service(&self) -> FarmService {
-        FarmService::new(self.client.clone())
+        FarmService::new(self.evm.clone())
     }
 
     /// Get farm analyzer instance
     pub fn farm_analyzer(&self) -> FarmAnalyzer {
-        FarmAnalyzer::new(self.client.clone())
+        FarmAnalyzer::new(self.evm.clone())
     }
 
     /// Get farm event listener instance
     pub fn farm_event_listener(&self) -> FarmEventListener {
-        FarmEventListener::new(self.client.clone())
+        FarmEventListener::new(self.evm.clone())
     }
 
     /// Get the output amounts for a given input amount along a specified path
@@ -207,10 +132,10 @@ impl UniswapService {
         path: Vec<Address>,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v2_router(router_address);
         let tx = router.swap_exact_tokens_for_tokens(
             amount_in,
@@ -248,10 +173,10 @@ impl UniswapService {
         value: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v2_router(router_address);
         let tx = router
             .swap_exact_eth_for_tokens(amount_out_min, path, wallet_address, deadline.into())
@@ -284,10 +209,10 @@ impl UniswapService {
         path: Vec<Address>,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v2_router(router_address);
         let tx = router.swap_exact_tokens_for_eth(
             amount_in,
@@ -330,10 +255,10 @@ impl UniswapService {
         amount_b_min: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v2_router(router_address);
         let tx = router.add_liquidity(
             token_a,
@@ -378,10 +303,10 @@ impl UniswapService {
         value: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v2_router(router_address);
         let tx = router
             .add_liquidity_eth(
@@ -427,10 +352,10 @@ impl UniswapService {
         sqrt_price_limit_x96: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v3_router(router_address);
         let tx = router.exact_input_single(
             token_in,
@@ -457,10 +382,10 @@ impl UniswapService {
         amount_out_min: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v3_router(router_address);
         let tx = router.exact_input(
             path,
@@ -487,10 +412,10 @@ impl UniswapService {
         sqrt_price_limit_x96: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v3_router(router_address);
         let tx = router.exact_output_single(
             token_in,
@@ -534,10 +459,10 @@ impl UniswapService {
         amount_b_min: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v2_router(router_address);
         let tx = router.remove_liquidity(
             token_a,
@@ -578,10 +503,10 @@ impl UniswapService {
         amount_eth_min: U256,
         deadline: u64,
     ) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
-        let wallet_address = self.client.wallet.as_ref().unwrap().address();
+        let wallet_address = self.evm.client.wallet.as_ref().unwrap().address();
         let router = self.router.v2_router(router_address);
         let tx = router.remove_liquidity_eth(
             token,
@@ -598,7 +523,7 @@ impl UniswapService {
     }
 
     pub fn event_listener(&self) -> UniswapEventListener {
-        UniswapEventListener::new(self.client.clone())
+        UniswapEventListener::new(self.evm.clone())
     }
 
     /// Start monitoring swap events for specified pairs
@@ -646,24 +571,24 @@ impl UniswapService {
 
 /// Service for interacting with Uniswap V4 protocol
 pub struct UniswapV4Service {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 
 impl UniswapV4Service {
     /// Create a new UniswapV4Service instance
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self { client }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm }
     }
 
     fn pool_manager(
         &self,
         manager_address: Address,
     ) -> IPoolManager<Provider<ethers::providers::Http>> {
-        IPoolManager::new(manager_address, self.client.provider.clone())
+        IPoolManager::new(manager_address, self.evm.client.provider.clone())
     }
 
     fn v4_pool(&self, pool_address: Address) -> IPool<Provider<ethers::providers::Http>> {
-        IPool::new(pool_address, self.client.provider.clone())
+        IPool::new(pool_address, self.evm.client.provider.clone())
     }
 
     /// Initialize a new V4 pool
@@ -694,7 +619,7 @@ impl UniswapV4Service {
         sqrt_price_x96: U256,
         hook_data: Vec<u8>,
     ) -> Result<Address, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let pool_manager = self.pool_manager(manager_address);
@@ -752,7 +677,7 @@ impl UniswapV4Service {
         sqrt_price_limit_x96: U256,
         hook_data: Vec<u8>,
     ) -> Result<(i128, i128), EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let pool_manager = self.pool_manager(manager_address);
@@ -804,7 +729,7 @@ impl UniswapV4Service {
         liquidity_delta: i128,
         hook_data: Vec<u8>,
     ) -> Result<(i128, i128), EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let pool_manager = self.pool_manager(manager_address);
@@ -935,7 +860,7 @@ impl UniswapV4Service {
         amount1: U256,
         hook_data: Vec<u8>,
     ) -> Result<(i128, i128), EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let pool_manager = self.pool_manager(manager_address);
@@ -963,7 +888,7 @@ impl UniswapV4Service {
         manager_address: Address,
         currency: Address,
     ) -> Result<U256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let pool_manager = self.pool_manager(manager_address);
@@ -1051,21 +976,21 @@ impl UniswapV4Service {
 pub struct UniswapConfig;
 
 impl UniswapConfig {
-    pub fn v2_router_address(chain: crate::EvmType) -> Result<Address, EvmError> {
+    pub fn v2_router_address(chain: EvmType) -> Result<Address, EvmError> {
         match chain {
-            crate::EvmType::Ethereum => Ok(str_to_address(
+            EvmType::ETHEREUM_MAINNET => Ok(str_to_address(
                 crate::global::ethereum::mainnet::dex::uniswap::ROUTER_V2_ADDRESS,
             )
             .unwrap()),
-            crate::EvmType::Arb => Ok(str_to_address(
+            EvmType::ARB_MAINNET => Ok(str_to_address(
                 crate::global::arb::mainnet::dex::uniswap::ROUTER_V2_ADDRESS,
             )
             .unwrap()),
-            crate::EvmType::Bsc => Ok(str_to_address(
+            EvmType::BSC_MAINNET => Ok(str_to_address(
                 crate::global::bsc::mainnet::dex::uniswap::ROUTER_V2_ADDRESS,
             )
             .unwrap()),
-            crate::EvmType::Base => Ok(str_to_address(
+            EvmType::BASE_MAINNET => Ok(str_to_address(
                 crate::global::base::mainnet::dex::uniswap::ROUTER_V2_ADDRESS,
             )
             .unwrap()),
@@ -1075,18 +1000,18 @@ impl UniswapConfig {
         }
     }
 
-    pub fn v2_factory_address(chain: crate::EvmType) -> Result<Address, EvmError> {
+    pub fn v2_factory_address(chain: EvmType) -> Result<Address, EvmError> {
         match chain {
-            crate::EvmType::Ethereum => {
+            EvmType::ETHEREUM_MAINNET => {
                 Ok(str_to_address("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f").unwrap())
             }
-            crate::EvmType::Arb => {
+            EvmType::ARB_MAINNET => {
                 Ok(str_to_address("0xc35DADB65012eC5796536bD9864eD8773aBc74C4").unwrap())
             }
-            crate::EvmType::Bsc => {
+            EvmType::BSC_MAINNET => {
                 Ok(str_to_address("0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73").unwrap())
             }
-            crate::EvmType::Base => {
+            EvmType::BASE_MAINNET => {
                 Ok(str_to_address("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6").unwrap())
             }
             _ => Err(EvmError::ConfigError(
@@ -1095,18 +1020,18 @@ impl UniswapConfig {
         }
     }
 
-    pub fn v3_router_address(chain: crate::EvmType) -> Result<Address, EvmError> {
+    pub fn v3_router_address(chain: EvmType) -> Result<Address, EvmError> {
         match chain {
-            crate::EvmType::Ethereum => {
+            EvmType::ETHEREUM_MAINNET => {
                 Ok(str_to_address("0xE592427A0AEce92De3Edee1F18E0157C05861564").unwrap())
             }
-            crate::EvmType::Arb => {
+            EvmType::ARB_MAINNET => {
                 Ok(str_to_address("0xE592427A0AEce92De3Edee1F18E0157C05861564").unwrap())
             }
-            crate::EvmType::Bsc => {
+            EvmType::BSC_MAINNET => {
                 Ok(str_to_address("0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2").unwrap())
             }
-            crate::EvmType::Base => {
+            EvmType::BASE_MAINNET => {
                 Ok(str_to_address("0x2626664c2603336E57B271c5C0b26F421741e481").unwrap())
             }
             _ => Err(EvmError::ConfigError(

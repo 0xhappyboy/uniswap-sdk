@@ -1,3 +1,4 @@
+use crate::EvmError;
 use crate::price::Price;
 use crate::tool::event_parsers::{
     parse_v4_liquidity_modified_log, parse_v4_pool_initialized_log, parse_v4_swap_log,
@@ -8,10 +9,10 @@ use crate::types::{
     SwapEvent, UnstakeEvent, V4LiquidityModifiedEvent,
 };
 use crate::types::{V4PoolInitializedEvent, V4SwapEvent};
-use crate::{EvmClient, EvmError};
 use ethers::providers::Middleware;
 use ethers::types::H256;
 use ethers::types::{Address, Filter, ValueOrArray};
+use evm_sdk::Evm;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
@@ -43,16 +44,16 @@ struct EventListenerState {
 
 // Event listener for Uniswap V2 and V3 events
 pub struct UniswapEventListener {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     config: EventListenerConfig,
     state: Arc<EventListenerState>,
 }
 
 impl UniswapEventListener {
     /// Creates a new UniswapEventListener with default configuration
-    pub fn new(client: Arc<EvmClient>) -> Self {
+    pub fn new(evm: Arc<Evm>) -> Self {
         Self {
-            client,
+            evm,
             config: EventListenerConfig::default(),
             state: Arc::new(EventListenerState {
                 last_block_number: AtomicU64::new(0),
@@ -62,9 +63,9 @@ impl UniswapEventListener {
     }
 
     /// Creates a new UniswapEventListener with custom configuration
-    pub fn with_config(client: Arc<EvmClient>, config: EventListenerConfig) -> Self {
+    pub fn with_config(evm: Arc<Evm>, config: EventListenerConfig) -> Self {
         Self {
-            client,
+            evm,
             config,
             state: Arc::new(EventListenerState {
                 last_block_number: AtomicU64::new(0),
@@ -155,26 +156,27 @@ impl UniswapEventListener {
                 "Listener is already running".to_string(),
             ));
         }
-
         self.state.is_running.store(true, Ordering::SeqCst);
-
         if self.state.last_block_number.load(Ordering::SeqCst) == 0 {
-            let current_block = self.client.provider.get_block_number().await.map_err(|e| {
-                EvmError::ContractError(format!("Failed to get current block: {}", e))
-            })?;
+            let current_block = self
+                .evm
+                .client
+                .provider
+                .get_block_number()
+                .await
+                .map_err(|e| {
+                    EvmError::ContractError(format!("Failed to get current block: {}", e))
+                })?;
             self.state
                 .last_block_number
                 .store(current_block.as_u64(), Ordering::SeqCst);
         }
-
-        let client = self.client.clone();
+        let client = self.evm.clone();
         let config = self.config.clone();
         let state = self.state.clone();
-
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(config.poll_interval_secs));
             interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
             while state.is_running.load(Ordering::SeqCst) {
                 interval.tick().await;
                 if let Err(e) = Self::poll_events(
@@ -189,12 +191,11 @@ impl UniswapEventListener {
                 {}
             }
         });
-
         Ok(())
     }
 
     async fn poll_events(
-        client: &EvmClient,
+        evm: &Evm,
         state: Arc<EventListenerState>,
         addresses: &[Address],
         event_name: &str,
@@ -202,40 +203,32 @@ impl UniswapEventListener {
         config: &EventListenerConfig,
     ) -> Result<(), EvmError> {
         let current_block =
-            client.provider.get_block_number().await.map_err(|e| {
+            evm.client.provider.get_block_number().await.map_err(|e| {
                 EvmError::ContractError(format!("Failed to get current block: {}", e))
             })?;
         let current_block_num = current_block.as_u64();
-
         let from_block = state.last_block_number.load(Ordering::SeqCst) + 1;
-
         let to_block = if current_block_num - from_block > config.max_blocks_per_poll {
             from_block + config.max_blocks_per_poll
         } else {
             current_block_num - config.confirmation_blocks
         };
-
         if from_block > to_block {
             return Ok(());
         }
-
         let filter = Filter::new()
             .address(ValueOrArray::Array(addresses.to_vec()))
             .from_block(from_block)
             .to_block(to_block)
             .event(event_name);
-
-        let logs = client
+        let logs = evm
             .get_logs(filter)
             .await
             .map_err(|e| EvmError::ContractError(format!("Failed to get logs: {}", e)))?;
-
         for log in logs {
             callback(log);
         }
-
         state.last_block_number.store(to_block, Ordering::SeqCst);
-
         Ok(())
     }
 
@@ -301,7 +294,7 @@ impl UniswapEventListener {
 
 /// Event listener for monitoring token price changes
 pub struct TokenPriceEventListener {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     config: EventListenerConfig,
     state: Arc<EventListenerState>,
     price_threshold: f64,
@@ -309,9 +302,9 @@ pub struct TokenPriceEventListener {
 
 impl TokenPriceEventListener {
     /// Creates a new TokenPriceEventListener with default configuration
-    pub fn new(client: Arc<EvmClient>, price_threshold: f64) -> Self {
+    pub fn new(evm: Arc<Evm>, price_threshold: f64) -> Self {
         Self {
-            client,
+            evm,
             config: EventListenerConfig::default(),
             state: Arc::new(EventListenerState {
                 last_block_number: AtomicU64::new(0),
@@ -322,13 +315,9 @@ impl TokenPriceEventListener {
     }
 
     /// Creates a new TokenPriceEventListener with custom configuration
-    pub fn with_config(
-        client: Arc<EvmClient>,
-        config: EventListenerConfig,
-        price_threshold: f64,
-    ) -> Self {
+    pub fn with_config(evm: Arc<Evm>, config: EventListenerConfig, price_threshold: f64) -> Self {
         Self {
-            client,
+            evm,
             config,
             state: Arc::new(EventListenerState {
                 last_block_number: AtomicU64::new(0),
@@ -367,14 +356,14 @@ impl TokenPriceEventListener {
         }
         self.state.is_running.store(true, Ordering::SeqCst);
         if self.state.last_block_number.load(Ordering::SeqCst) == 0 {
-            let current_block = self.client.provider.get_block_number().await.map_err(|e| {
+            let current_block = self.evm.get_block_number().await.map_err(|e| {
                 EvmError::ContractError(format!("Failed to get current block: {}", e))
             })?;
             self.state
                 .last_block_number
-                .store(current_block.as_u64(), Ordering::SeqCst);
+                .store(current_block, Ordering::SeqCst);
         }
-        let client = self.client.clone();
+        let client = self.evm.clone();
         let config = self.config.clone();
         let state = self.state.clone();
         let price_threshold = self.price_threshold;
@@ -404,7 +393,7 @@ impl TokenPriceEventListener {
     }
 
     async fn monitor_price_changes(
-        client: &EvmClient,
+        evm: &Evm,
         state: Arc<EventListenerState>,
         token_addresses: &[Address],
         pair_addresses: &[Address],
@@ -414,25 +403,21 @@ impl TokenPriceEventListener {
         price_history: Arc<tokio::sync::Mutex<std::collections::HashMap<Address, f64>>>,
     ) -> Result<(), EvmError> {
         let current_block =
-            client.provider.get_block_number().await.map_err(|e| {
+            evm.client.provider.get_block_number().await.map_err(|e| {
                 EvmError::ContractError(format!("Failed to get current block: {}", e))
             })?;
         let current_block_num = current_block.as_u64();
-
         let from_block = state.last_block_number.load(Ordering::SeqCst) + 1;
         let to_block = current_block_num - config.confirmation_blocks;
-
         if from_block > to_block {
             return Ok(());
         }
-
         let filter = Filter::new()
             .address(ValueOrArray::Array(pair_addresses.to_vec()))
             .from_block(from_block)
             .to_block(to_block)
             .event("Swap");
-
-        let logs = client
+        let logs = evm
             .get_logs(filter)
             .await
             .map_err(|e| EvmError::ContractError(format!("Failed to get swap logs: {}", e)))?;
@@ -440,7 +425,7 @@ impl TokenPriceEventListener {
         for log in logs {
             if let Ok(swap_event) = parse_swap_log(&log) {
                 if let Ok((token0, token1)) =
-                    Self::get_pair_tokens(client, swap_event.pair_address).await
+                    Self::get_pair_tokens(evm, swap_event.pair_address).await
                 {
                     if let Ok(current_price) =
                         Self::calculate_token_price(&swap_event, token0, token1)
@@ -513,11 +498,10 @@ impl TokenPriceEventListener {
     /// ```
     ///
     async fn get_pair_tokens(
-        client: &EvmClient,
+        evm: &Evm,
         pair_address: Address,
     ) -> Result<(Address, Address), EvmError> {
-        let price_service = Price::new(Arc::new(client.clone()));
-        // 复用 Price 服务中的方法获取代币信息
+        let price_service = Price::new(Arc::new(evm.clone()));
         let token0 = price_service.get_token0(pair_address).await?;
         let token1 = price_service.get_token1(pair_address).await?;
         Ok((token0, token1))
@@ -559,14 +543,12 @@ impl TokenPriceEventListener {
 
 /// uniswap event manager
 pub struct UniswapEventManager {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 impl UniswapEventManager {
     /// Creates a new UniswapEventManager
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self {
-            client: client.clone(),
-        }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm.clone() }
     }
 
     /// Retrieves Swap events within a block range
@@ -611,7 +593,7 @@ impl UniswapEventManager {
             .from_block(from_block)
             .to_block(to_block)
             .event(event_name);
-        self.client
+        self.evm
             .get_logs(filter)
             .await
             .map_err(|e| EvmError::ContractError(format!("Failed to get historical events: {}", e)))
@@ -640,16 +622,16 @@ pub enum PriceChangeDirection {
 
 /// Event listener for farm-related events
 pub struct FarmEventListener {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     is_running: Arc<AtomicBool>,
     last_block: Arc<AtomicU64>,
 }
 
 impl FarmEventListener {
     /// Creates a new FarmEventListener
-    pub fn new(client: Arc<EvmClient>) -> Self {
+    pub fn new(evm: Arc<Evm>) -> Self {
         Self {
-            client,
+            evm,
             is_running: Arc::new(AtomicBool::new(false)),
             last_block: Arc::new(AtomicU64::new(0)),
         }
@@ -736,13 +718,19 @@ impl FarmEventListener {
         self.is_running
             .store(true, std::sync::atomic::Ordering::SeqCst);
         if self.last_block.load(std::sync::atomic::Ordering::SeqCst) == 0 {
-            let current_block = self.client.provider.get_block_number().await.map_err(|e| {
-                EvmError::ContractError(format!("Failed to get current block: {}", e))
-            })?;
+            let current_block = self
+                .evm
+                .client
+                .provider
+                .get_block_number()
+                .await
+                .map_err(|e| {
+                    EvmError::ContractError(format!("Failed to get current block: {}", e))
+                })?;
             self.last_block
                 .store(current_block.as_u64(), std::sync::atomic::Ordering::SeqCst);
         }
-        let client = self.client.clone();
+        let evm = self.evm.clone();
         let is_running = self.is_running.clone();
         let last_block = self.last_block.clone();
         tokio::spawn(async move {
@@ -750,8 +738,7 @@ impl FarmEventListener {
             while is_running.load(std::sync::atomic::Ordering::SeqCst) {
                 interval.tick().await;
                 if let Err(e) =
-                    Self::poll_events(&client, &last_block, &addresses, &event_name, &callback)
-                        .await
+                    Self::poll_events(&evm, &last_block, &addresses, &event_name, &callback).await
                 {
                     eprintln!("Error polling farm events: {}", e);
                 }
@@ -761,14 +748,14 @@ impl FarmEventListener {
     }
 
     async fn poll_events(
-        client: &EvmClient,
+        evm: &Evm,
         last_block: &AtomicU64,
         addresses: &[Address],
         event_name: &str,
         callback: &impl Fn(ethers::types::Log),
     ) -> Result<(), EvmError> {
         let current_block =
-            client.provider.get_block_number().await.map_err(|e| {
+            evm.client.provider.get_block_number().await.map_err(|e| {
                 EvmError::ContractError(format!("Failed to get current block: {}", e))
             })?;
         let from_block = last_block.load(std::sync::atomic::Ordering::SeqCst) + 1;
@@ -781,7 +768,7 @@ impl FarmEventListener {
             .from_block(from_block)
             .to_block(to_block)
             .event(event_name);
-        let logs = client.get_logs(filter).await.map_err(|e| {
+        let logs = evm.get_logs(filter).await.map_err(|e| {
             EvmError::ContractError(format!("Failed to get farm event logs: {}", e))
         })?;
         for log in logs {

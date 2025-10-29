@@ -1,5 +1,6 @@
-use crate::{EvmClient, EvmError};
+use crate::EvmError;
 use ethers::types::{Address, U256};
+use evm_sdk::Evm;
 use std::sync::Arc;
 
 /// Represents a pending swap transaction
@@ -34,7 +35,7 @@ pub enum RiskLevel {
 
 /// Assesses various risks associated with swap transactions
 pub struct Risk {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 
 impl Risk {
@@ -45,11 +46,11 @@ impl Risk {
     /// use std::sync::Arc;
     /// use risk_analyzer::{Risk, EvmClient};
     ///
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let risk_assessor = Risk::new(client);
     /// ```
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self { client }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm }
     }
 
     /// Calculates the maximum swap amount for a given pool with specified slippage tolerance
@@ -64,7 +65,7 @@ impl Risk {
     /// use risk_analyzer::{Risk, EvmClient};
     /// use std::sync::Arc;
     /// use ethers::types::Address;
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let risk_assessor = Risk::new(client);
     /// let pool_address = Address::zero();
     /// let max_amount = risk_assessor.calculate_max_swap_amount(pool_address, 1.0).await?;

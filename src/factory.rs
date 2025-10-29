@@ -1,16 +1,16 @@
 use crate::Arc;
-use crate::EvmClient;
+use crate::Evm;
 use crate::EvmError;
 use crate::UniswapConfig;
 use crate::abi::IUniswapV2Factory;
-use crate::types::EvmType;
 use ethers::providers::Provider;
 use ethers::types::Address;
+use evm_client::EvmType;
 
 /// Factory for interacting with Uniswap V2 and V3 factories
 /// Provides methods to discover trading pairs and liquidity pools
 pub struct Factory {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 impl Factory {
     /// Creates a new Factory instance
@@ -20,13 +20,13 @@ impl Factory {
     ///
     /// # Example
     /// ```
-    /// use crate::{Arc, EvmClient, Factory};
+    /// use crate::{Arc, Factory};
     ///
-    /// let client = EvmClient::new(EvmType::Ethereum).await?;
+    /// let client = Evm::new(EvmType::ETHEREUM_MAINNET).await?;
     /// let factory = Factory::new(client);
     /// ```
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self { client }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm }
     }
 
     /// Get Uniswap V2 Factory instance
@@ -34,7 +34,7 @@ impl Factory {
         &self,
         factory_address: Address,
     ) -> IUniswapV2Factory<Provider<ethers::providers::Http>> {
-        IUniswapV2Factory::new(factory_address, self.client.provider.clone())
+        IUniswapV2Factory::new(factory_address, self.evm.client.provider.clone())
     }
 
     /// Finds common price pairs for a given token across stablecoins and ETH

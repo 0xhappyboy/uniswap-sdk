@@ -1,9 +1,10 @@
 use crate::farm::FarmService;
 use crate::price::Price;
 use crate::types::{FarmPerformance, FarmPool};
-use crate::{EvmClient, EvmError};
+use crate::{Evm, EvmError};
 use ethers::types::Address;
 use ethers::types::U256;
+use evm_client::EvmType;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,13 +51,13 @@ pub struct PoolHealthScore {
 /// Analytics engine for DeFi protocol analysis including liquidity monitoring,
 /// arbitrage detection, and pool health assessment.
 pub struct Analyze {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 
 impl Analyze {
     /// Creates a new Analyze instance.
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self { client }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm }
     }
 
     /// Monitors liquidity changes for specified pools and returns a receiver for liquidity events.
@@ -68,7 +69,7 @@ impl Analyze {
     /// use std::sync::Arc;
     ///
     /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let engine = Analyze::new(client);
     /// let pools = vec![
     ///     "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852".parse()? // USDT-WETH
@@ -86,9 +87,9 @@ impl Analyze {
         pools: Vec<Address>,
     ) -> Result<mpsc::Receiver<LiquidityChangeEvent>, EvmError> {
         let (tx, rx) = mpsc::channel(100);
-        let client = self.client.clone();
+        let evm = self.evm.clone();
         tokio::spawn(async move {
-            let mut last_block = match client.get_block_number().await {
+            let mut last_block = match evm.get_block_number().await {
                 Ok(block) => block,
                 Err(e) => {
                     eprintln!("Failed to get block number: {}", e);
@@ -98,13 +99,13 @@ impl Analyze {
             let mut interval = tokio::time::interval(Duration::from_secs(12));
             loop {
                 interval.tick().await;
-                match client.get_block_number().await {
+                match evm.get_block_number().await {
                     Ok(current_block) => {
                         if current_block > last_block {
                             let event_manager =
-                                crate::events::UniswapEventManager::new(client.clone());
+                                crate::events::UniswapEventManager::new(evm.clone());
                             if let Err(e) = Self::process_liquidity_events(
-                                client.clone(),
+                                evm.clone(),
                                 &event_manager,
                                 &pools,
                                 &tx,
@@ -126,7 +127,7 @@ impl Analyze {
     }
 
     async fn process_liquidity_events(
-        client: Arc<EvmClient>,
+        evm: Arc<Evm>,
         event_manager: &crate::events::UniswapEventManager,
         pools: &[Address],
         tx: &mpsc::Sender<LiquidityChangeEvent>,
@@ -140,12 +141,12 @@ impl Analyze {
             .get_historical_events(pools.to_vec(), "Burn", from_block, to_block)
             .await?;
         for log in mint_logs {
-            if let Ok(event) = Self::parse_mint_to_liquidity_event(client.clone(), &log).await {
+            if let Ok(event) = Self::parse_mint_to_liquidity_event(evm.clone(), &log).await {
                 let _ = tx.send(event).await;
             }
         }
         for log in burn_logs {
-            if let Ok(event) = Self::parse_burn_to_liquidity_event(client.clone(), &log).await {
+            if let Ok(event) = Self::parse_burn_to_liquidity_event(evm.clone(), &log).await {
                 let _ = tx.send(event).await;
             }
         }
@@ -153,11 +154,11 @@ impl Analyze {
     }
 
     async fn parse_mint_to_liquidity_event(
-        client: Arc<EvmClient>,
+        evm: Arc<Evm>,
         log: &ethers::types::Log,
     ) -> Result<LiquidityChangeEvent, EvmError> {
         let pool_address = log.address;
-        let price_service = Price::new(client.clone());
+        let price_service = Price::new(evm.clone());
         let (_, _, reserve0, reserve1, _) = price_service.get_pair_info(pool_address).await?;
         let (token0_delta, token1_delta) = if log.data.len() >= 64 {
             let amount0 = U256::from_big_endian(&log.data[0..32]);
@@ -178,11 +179,11 @@ impl Analyze {
     }
 
     async fn parse_burn_to_liquidity_event(
-        client: Arc<EvmClient>,
+        evm: Arc<Evm>,
         log: &ethers::types::Log,
     ) -> Result<LiquidityChangeEvent, EvmError> {
         let pool_address = log.address;
-        let price_service = crate::price::Price::new(client.clone());
+        let price_service = crate::price::Price::new(evm.clone());
         let (_, _, reserve0, reserve1, _) = price_service.get_pair_info(pool_address).await?;
         let (token0_delta, token1_delta) = if log.data.len() >= 64 {
             let amount0 = U256::from_big_endian(&log.data[0..32]);
@@ -211,7 +212,7 @@ impl Analyze {
     /// use std::sync::Arc;
     ///
     /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let engine = Analyze::new(client);
     /// let tokens = vec![
     ///     "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".parse()? // WETH
@@ -249,7 +250,7 @@ impl Analyze {
     /// use std::sync::Arc;
     ///
     /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let engine = Analyze::new(client);
     /// let pool_address = "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852".parse()?; // USDT-WETH
     /// let health_score = engine.cal_pool_health_score(pool_address).await?;
@@ -298,7 +299,7 @@ impl Analyze {
     /// use std::sync::Arc;
     ///
     /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let engine = Analyze::new(client);
     /// let factory = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f".parse()?; // Uniswap V2
     /// let min_liquidity = 10000.0; // $10,000 minimum
@@ -316,7 +317,7 @@ impl Analyze {
         factory_address: Address,
         min_liquidity: f64,
     ) -> Result<Vec<DiscoveredPair>, EvmError> {
-        let factory = crate::factory::Factory::new(self.client.clone());
+        let factory = crate::factory::Factory::new(self.evm.clone());
         let mut discovered_pairs = Vec::new();
         let base_tokens = self.get_base_tokens().await;
         for i in 0..base_tokens.len() {
@@ -349,7 +350,7 @@ impl Analyze {
         token0: Address,
         token1: Address,
     ) -> Result<DiscoveredPair, EvmError> {
-        let price_service = crate::price::Price::new(self.client.clone());
+        let price_service = crate::price::Price::new(self.evm.clone());
         let (reserve0, reserve1, _) = price_service.get_reserves(pair_address).await?;
         let liquidity = reserve0.as_u128() as f64 + reserve1.as_u128() as f64;
         let creation_block = self
@@ -391,7 +392,7 @@ impl Analyze {
     }
 
     async fn get_pair_creation_block(&self, pair_address: Address) -> Result<u64, EvmError> {
-        let event_manager = crate::events::UniswapEventManager::new(self.client.clone());
+        let event_manager = crate::events::UniswapEventManager::new(self.evm.clone());
         let logs = event_manager
             .get_historical_events(vec![pair_address], "Mint", 0, u64::MAX)
             .await?;
@@ -411,7 +412,7 @@ impl Analyze {
     /// use std::sync::Arc;
     ///
     /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let engine = Analyze::new(client);
     /// let pool_address = "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852".parse()?; // USDT-WETH
     /// let report = engine.analyze_fee_efficiency(pool_address).await?;
@@ -428,7 +429,7 @@ impl Analyze {
         &self,
         pool_address: Address,
     ) -> Result<FeeEfficiencyReport, EvmError> {
-        let price_service = crate::price::Price::new(self.client.clone());
+        let price_service = crate::price::Price::new(self.evm.clone());
         let volume_24h = self.cal_24h_volume(pool_address).await?;
         let (reserve0, reserve1, _) = price_service.get_reserves(pool_address).await?;
         let total_liquidity = reserve0.as_u128() as f64 + reserve1.as_u128() as f64;
@@ -450,15 +451,19 @@ impl Analyze {
     }
 
     async fn cal_24h_volume(&self, pool_address: Address) -> Result<f64, EvmError> {
-        let current_block = self.client.get_block_number().await?;
+        let current_block = self
+            .evm
+            .get_block_number()
+            .await
+            .map_err(|e| EvmError::Error(format!("{:?}", e)))
+            .unwrap();
         let blocks_per_day = 7200u64;
-
         let from_block = if current_block > blocks_per_day {
             current_block - blocks_per_day
         } else {
             0
         };
-        let event_manager = crate::events::UniswapEventManager::new(self.client.clone());
+        let event_manager = crate::events::UniswapEventManager::new(self.evm.clone());
         let logs = event_manager
             .get_historical_events(vec![pool_address], "Swap", from_block, current_block)
             .await?;
@@ -499,9 +504,9 @@ impl Analyze {
         &self,
         token: Address,
     ) -> Result<ArbitrageOpportunity, EvmError> {
-        let liquidity_finder = crate::liquidity::LiquidityPoolFinder::new(self.client.clone());
+        let liquidity_finder = crate::liquidity::LiquidityPoolFinder::new(self.evm.clone());
         let pools = liquidity_finder
-            .find_liquidity_pools(token, crate::EvmType::Ethereum)
+            .find_liquidity_pools(token, EvmType::ETHEREUM_MAINNET)
             .await?;
         if pools.is_empty() {
             return Ok(ArbitrageOpportunity {
@@ -509,7 +514,13 @@ impl Analyze {
                 profit_estimate: 0.0,
                 path: vec![],
                 confidence: 0.0,
-                expiration_block: self.client.get_block_number().await? + 5,
+                expiration_block: self
+                    .evm
+                    .get_block_number()
+                    .await
+                    .map_err(|e| EvmError::Error(format!("{:?}", e)))
+                    .unwrap()
+                    + 5,
             });
         }
         let triangular_opportunity = self.analyze_triangular_arbitrage(token, &pools).await?;
@@ -602,7 +613,13 @@ impl Analyze {
             profit_estimate: best_profit,
             path: best_path,
             confidence: if best_profit > 0.0 { 0.8 } else { 0.0 },
-            expiration_block: self.client.get_block_number().await? + 3,
+            expiration_block: self
+                .evm
+                .get_block_number()
+                .await
+                .map_err(|e| EvmError::Error(format!("{:?}", e)))
+                .unwrap()
+                + 3,
         })
     }
 
@@ -617,7 +634,13 @@ impl Analyze {
                 profit_estimate: 0.0,
                 path: vec![],
                 confidence: 0.0,
-                expiration_block: self.client.get_block_number().await? + 5,
+                expiration_block: self
+                    .evm
+                    .get_block_number()
+                    .await
+                    .map_err(|e| EvmError::Error(format!("{:?}", e)))
+                    .unwrap()
+                    + 5,
             });
         }
         let mut best_profit = 0.0;
@@ -654,7 +677,13 @@ impl Analyze {
                     expected_rate: 1.0 + best_profit / 100.0,
                 }],
                 confidence: 0.7,
-                expiration_block: self.client.get_block_number().await? + 10,
+                expiration_block: self
+                    .evm
+                    .get_block_number()
+                    .await
+                    .map_err(|e| EvmError::Error(format!("{:?}", e)))
+                    .unwrap()
+                    + 10,
             })
         } else {
             Ok(ArbitrageOpportunity {
@@ -662,7 +691,13 @@ impl Analyze {
                 profit_estimate: 0.0,
                 path: vec![],
                 confidence: 0.0,
-                expiration_block: self.client.get_block_number().await? + 5,
+                expiration_block: self
+                    .evm
+                    .get_block_number()
+                    .await
+                    .map_err(|e| EvmError::Error(format!("{:?}", e)))
+                    .unwrap()
+                    + 5,
             })
         }
     }
@@ -714,7 +749,7 @@ impl Analyze {
         &self,
         pool_address: Address,
     ) -> Result<LiquidityMetrics, EvmError> {
-        let price_service = crate::price::Price::new(self.client.clone());
+        let price_service = crate::price::Price::new(self.evm.clone());
         let (reserve0, reserve1, _) = price_service.get_reserves(pool_address).await?;
         let total_liquidity = reserve0.as_u128() as f64 + reserve1.as_u128() as f64;
         let liquidity_depth = (reserve0.as_u128() as f64 * reserve1.as_u128() as f64).sqrt();
@@ -749,7 +784,7 @@ impl Analyze {
         &self,
         pool_address: Address,
     ) -> Result<ConcentrationMetrics, EvmError> {
-        let price_service = crate::price::Price::new(self.client.clone());
+        let price_service = crate::price::Price::new(self.evm.clone());
         let (reserve0, reserve1, _) = price_service.get_reserves(pool_address).await?;
         let reserve_ratio = if !reserve1.is_zero() {
             reserve0.as_u128() as f64 / reserve1.as_u128() as f64
@@ -769,10 +804,9 @@ impl Analyze {
         &self,
         pool_address: Address,
     ) -> Result<StabilityMetrics, EvmError> {
-        let price_history =
-            crate::price::TokenPriceHistory::with_default_config(self.client.clone());
+        let price_history = crate::price::TokenPriceHistory::with_default_config(self.evm.clone());
         let stats = price_history
-            .get_price_statistics(pool_address, crate::EvmType::Ethereum)
+            .get_price_statistics(pool_address, EvmType::ETHEREUM_MAINNET)
             .await?;
         let price_volatility = stats.volatility_usd;
         let max_drawdown = self.cal_max_drawdown(pool_address).await?;
@@ -848,10 +882,9 @@ impl Analyze {
     }
 
     async fn cal_max_drawdown(&self, pool_address: Address) -> Result<f64, EvmError> {
-        let price_history =
-            crate::price::TokenPriceHistory::with_default_config(self.client.clone());
+        let price_history = crate::price::TokenPriceHistory::with_default_config(self.evm.clone());
         let stats = price_history
-            .get_price_statistics(pool_address, crate::EvmType::Ethereum)
+            .get_price_statistics(pool_address, EvmType::ETHEREUM_MAINNET)
             .await?;
         Ok((stats.all_time_high_usd - stats.all_time_low_usd) / stats.all_time_high_usd)
     }
@@ -924,12 +957,12 @@ pub struct FeeEfficiencyReport {
 }
 
 pub struct FarmAnalyzer {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 
 impl FarmAnalyzer {
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self { client }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm }
     }
 
     pub async fn analyze_farm_performance(
@@ -952,12 +985,10 @@ impl FarmAnalyzer {
         available_lp_tokens: HashMap<Address, U256>,
         factory_address: Address,
     ) -> Result<Vec<FarmStrategy>, EvmError> {
-        let all_farms = FarmService::new(self.client.clone())
-            .get_all_farms(factory_address, crate::EvmType::Ethereum)
+        let all_farms = FarmService::new(self.evm.clone())
+            .get_all_farms(factory_address, EvmType::ETHEREUM_MAINNET)
             .await?;
-
         let mut strategies = Vec::new();
-
         for (lp_token, amount) in available_lp_tokens {
             let relevant_farms: Vec<&FarmPool> = all_farms
                 .iter()
@@ -994,7 +1025,7 @@ impl FarmAnalyzer {
         user_address: Address,
         stake_amount: U256,
     ) -> Result<f64, EvmError> {
-        let farm_service = FarmService::new(self.client.clone());
+        let farm_service = FarmService::new(self.evm.clone());
         let farm_detail = farm_service.get_farm_detail(farm_address).await?;
         if farm_detail.total_staked.is_zero() {
             return Ok(0.0);
@@ -1029,7 +1060,7 @@ impl FarmAnalyzer {
         &self,
         farm_address: Address,
     ) -> Result<Vec<FarmRisk>, EvmError> {
-        let farm_detail = FarmService::new(self.client.clone())
+        let farm_detail = FarmService::new(self.evm.clone())
             .get_farm_detail(farm_address)
             .await?;
         let mut risks = Vec::new();

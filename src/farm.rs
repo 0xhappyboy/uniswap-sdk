@@ -1,21 +1,23 @@
-use crate::abi::{IFarmFactory, IMasterChef, IStakingRewards};
+use crate::EvmError;
+use crate::abi::{IFarmFactory, IStakingRewards};
 use crate::types::*;
-use crate::{EvmClient, EvmError};
 use ethers::providers::Provider;
 use ethers::types::{Address, H256, U256};
+use evm_client::EvmType;
+use evm_sdk::Evm;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub struct FarmService {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     farm_cache: Arc<Mutex<HashMap<Address, FarmPool>>>,
 }
 
 impl FarmService {
-    pub fn new(client: Arc<EvmClient>) -> Self {
+    pub fn new(evm: Arc<Evm>) -> Self {
         Self {
-            client,
+            evm: evm,
             farm_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -39,7 +41,7 @@ impl FarmService {
     pub async fn get_all_farms(
         &self,
         factory_address: Address,
-        chain: crate::EvmType,
+        chain: EvmType,
     ) -> Result<Vec<FarmPool>, EvmError> {
         let factory = self.farm_factory(factory_address);
         let farm_count = factory
@@ -180,7 +182,7 @@ impl FarmService {
     /// println!("Stake transaction: {:?}", tx_hash);
     /// ```
     pub async fn stake(&self, farm_address: Address, amount: U256) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let farm = self.staking_rewards(farm_address);
@@ -205,7 +207,7 @@ impl FarmService {
     /// println!("Unstake transaction: {:?}", tx_hash);
     /// ```
     pub async fn unstake(&self, farm_address: Address, amount: U256) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let farm = self.staking_rewards(farm_address);
@@ -228,7 +230,7 @@ impl FarmService {
     /// println!("Claim rewards transaction: {:?}", tx_hash);
     /// ```
     pub async fn claim_rewards(&self, farm_address: Address) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let farm = self.staking_rewards(farm_address);
@@ -252,7 +254,7 @@ impl FarmService {
     /// println!("Exit farm transaction: {:?}", tx_hash);
     /// ```
     pub async fn exit_farm(&self, farm_address: Address) -> Result<H256, EvmError> {
-        if self.client.wallet.is_none() {
+        if self.evm.client.wallet.is_none() {
             return Err(EvmError::WalletError("No wallet configured".to_string()));
         }
         let farm = self.staking_rewards(farm_address);
@@ -354,13 +356,13 @@ impl FarmService {
         &self,
         farm_address: Address,
     ) -> IStakingRewards<Provider<ethers::providers::Http>> {
-        IStakingRewards::new(farm_address, self.client.provider.clone())
+        IStakingRewards::new(farm_address, self.evm.client.provider.clone())
     }
 
     fn farm_factory(
         &self,
         factory_address: Address,
     ) -> IFarmFactory<Provider<ethers::providers::Http>> {
-        IFarmFactory::new(factory_address, self.client.provider.clone())
+        IFarmFactory::new(factory_address, self.evm.client.provider.clone())
     }
 }

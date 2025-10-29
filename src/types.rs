@@ -47,40 +47,6 @@ impl fmt::Display for EvmError {
 
 impl std::error::Error for EvmError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EvmType {
-    Ethereum,
-    Arb,
-    Bsc,
-    Base,
-    HyperEVM,
-    Plasma,
-}
-
-impl EvmType {
-    pub fn name(&self) -> &'static str {
-        match self {
-            EvmType::Ethereum => "Ethereum",
-            EvmType::Arb => "Arbitrum",
-            EvmType::Bsc => "Binance Smart Chain",
-            EvmType::Base => "Base",
-            EvmType::HyperEVM => "HyperEVM",
-            EvmType::Plasma => "Plasma",
-        }
-    }
-
-    pub fn chain_id(&self) -> u64 {
-        match self {
-            EvmType::Ethereum => 1,
-            EvmType::Arb => 42161,
-            EvmType::Bsc => 56,
-            EvmType::Base => 8453,
-            EvmType::HyperEVM => 777,
-            EvmType::Plasma => 94,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct SwapEvent {
     pub pair_address: Address,

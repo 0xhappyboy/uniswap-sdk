@@ -1,7 +1,9 @@
-use crate::{EvmClient, EvmError, router::UniswapVersion};
-use ethers::types::{Address, U256};
+use crate::{EvmError, router::UniswapVersion};
+use ethers::types::Address;
+use evm_sdk::Evm;
+use evm_client::EvmClient;
 use std::sync::Arc;
-use tokio::time::{Duration, Instant};
+use tokio::time::Duration;
 
 #[derive(Debug, Clone)]
 pub enum ExternalOracle {
@@ -30,7 +32,7 @@ pub struct ManipulationResistantPrice {
 
 /// Aggregates price data from multiple sources to provide manipulation-resistant pricing
 pub struct PriceOracleAggregator {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     uniswap_versions: Vec<UniswapVersion>,
     external_oracles: Vec<ExternalOracle>,
 }
@@ -41,14 +43,14 @@ impl PriceOracleAggregator {
     /// # Example
     /// ```
     /// use std::sync::Arc;
-    /// use crate::{EvmClient, PriceOracleAggregator};
+    /// use crate::{EVM, PriceOracleAggregator};
     ///
-    /// let client = Arc::new(EvmClient::new());
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let aggregator = PriceOracleAggregator::new(client);
     /// ```
-    pub fn new(client: Arc<EvmClient>) -> Self {
+    pub fn new(evm: Arc<Evm>) -> Self {
         Self {
-            client,
+            evm,
             uniswap_versions: vec![UniswapVersion::V2, UniswapVersion::V3, UniswapVersion::V4],
             external_oracles: vec![ExternalOracle::Chainlink, ExternalOracle::UniswapV3TWAP],
         }

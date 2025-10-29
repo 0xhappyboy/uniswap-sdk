@@ -1,14 +1,15 @@
+use crate::EvmError;
 use crate::abi::IUniswapV2Pair;
 use crate::events::UniswapEventManager;
 use crate::factory::Factory;
 use crate::liquidity::{LiquidityPoolFinder, LiquidityPoolInfo};
 use crate::tool::{cal_swap_volume, parse_swap_log};
 use crate::types::SwapEvent;
-use crate::{EvmClient, EvmError};
 use ethers::abi::Bytes;
 use ethers::providers::Middleware;
 use ethers::providers::Provider;
 use ethers::types::{Address, TransactionRequest, U256};
+use evm_sdk::Evm;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -28,18 +29,18 @@ pub struct PairPrice {
 
 /// Main price calculation service for Uniswap pairs and tokens
 pub struct Price {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     factory: Arc<Factory>,
     event_manager: Arc<UniswapEventManager>,
 }
 
 impl Price {
     /// Creates a new Price service instance
-    pub fn new(client: Arc<EvmClient>) -> Self {
+    pub fn new(evm: Arc<Evm>) -> Self {
         Self {
-            client: client.clone(),
-            factory: Arc::new(Factory::new(client.clone())),
-            event_manager: Arc::new(UniswapEventManager::new(client.clone())),
+            evm: evm.clone(),
+            factory: Arc::new(Factory::new(evm.clone())),
+            event_manager: Arc::new(UniswapEventManager::new(evm.clone())),
         }
     }
 
@@ -110,7 +111,7 @@ impl Price {
     }
 
     fn v2_pair(&self, pair_address: Address) -> IUniswapV2Pair<Provider<ethers::providers::Http>> {
-        IUniswapV2Pair::new(pair_address, self.client.provider.clone())
+        IUniswapV2Pair::new(pair_address, self.evm.client.provider.clone())
     }
 
     /// Gets reserves for a pair address
@@ -421,6 +422,7 @@ impl Price {
             .to(pair_address)
             .data(Bytes::from(calldata));
         let result = self
+            .evm
             .client
             .provider
             .as_ref()
@@ -489,7 +491,7 @@ impl Default for PriceHistoryConfig {
 
 /// Service for retrieving historical price data
 pub struct TokenPriceHistory {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
     config: PriceHistoryConfig,
     factory: Arc<Factory>,
     price: Arc<Price>,
@@ -498,20 +500,20 @@ pub struct TokenPriceHistory {
 
 impl TokenPriceHistory {
     /// Creates a new TokenPriceHistory service
-    pub fn new(client: Arc<EvmClient>, config: PriceHistoryConfig) -> Self {
+    pub fn new(evm: Arc<Evm>, config: PriceHistoryConfig) -> Self {
         Self {
-            client: client.clone(),
+            evm: evm.clone(),
             config,
-            price: Arc::new(Price::new(client.clone())),
-            factory: Arc::new(Factory::new(client.clone())),
-            event_manager: Arc::new(UniswapEventManager::new(client.clone())),
+            price: Arc::new(Price::new(evm.clone())),
+            factory: Arc::new(Factory::new(evm.clone())),
+            event_manager: Arc::new(UniswapEventManager::new(evm.clone())),
         }
     }
 
     /// Creates a TokenPriceHistory service with default configuration
-    pub fn with_default_config(client: Arc<EvmClient>) -> Self {
+    pub fn with_default_config(evm: Arc<Evm>) -> Self {
         let config = PriceHistoryConfig::default();
-        Self::new(client, config)
+        Self::new(evm, config)
     }
 
     /// Gets recent prices for a token
@@ -521,7 +523,7 @@ impl TokenPriceHistory {
     /// let history_service = TokenPriceHistory::with_default_config(client);
     /// let recent_prices = history_service.get_recent_prices(
     ///     token_address,
-    ///     EvmType::Ethereum,
+    ///     EvmType::ETHEREUM_MAINNET,
     ///     1000  // last 1000 blocks
     /// ).await?;
     /// ```
@@ -531,16 +533,18 @@ impl TokenPriceHistory {
         chain: crate::EvmType,
         blocks_back: u64,
     ) -> Result<Vec<PriceDataPoint>, EvmError> {
-        let current_block =
-            self.client.provider.get_block_number().await.map_err(|e| {
-                EvmError::ContractError(format!("Failed to get current block: {}", e))
-            })?;
+        let current_block = self
+            .evm
+            .client
+            .provider
+            .get_block_number()
+            .await
+            .map_err(|e| EvmError::ContractError(format!("Failed to get current block: {}", e)))?;
         let start_block = current_block.as_u64().saturating_sub(blocks_back);
         let mut config = self.config.clone();
         config.start_block = start_block;
         config.end_block = current_block.as_u64();
-
-        let history_getter = TokenPriceHistory::new(self.client.clone(), config);
+        let history_getter = TokenPriceHistory::new(self.evm.clone(), config);
         history_getter
             .get_full_price_history(token_address, chain)
             .await
@@ -700,6 +704,7 @@ impl TokenPriceHistory {
         }
 
         let block = self
+            .evm
             .client
             .provider
             .get_block(block_number)

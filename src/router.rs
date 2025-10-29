@@ -1,13 +1,11 @@
-use crate::{
-    EvmClient,
-    abi::{ISwapRouter, IUniswapV2Router02},
-};
+use crate::abi::{ISwapRouter, IUniswapV2Router02};
 use ethers::{abi::Address, providers::Provider};
+use evm_sdk::Evm;
 use std::sync::Arc;
 
 /// Router provides access to Uniswap V2 and V3 router contracts
 pub struct Router {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 impl Router {
     /// Creates a new Router instance
@@ -20,11 +18,11 @@ impl Router {
     /// use std::sync::Arc;
     /// use crate::{EvmClient, router::Router};
     ///
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let router = Router::new(client);
     /// ```
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self { client }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm }
     }
 
     /// Creates a V2 router instance for the specified address
@@ -44,7 +42,7 @@ impl Router {
         &self,
         router_address: Address,
     ) -> IUniswapV2Router02<Provider<ethers::providers::Http>> {
-        IUniswapV2Router02::new(router_address, self.client.provider.clone())
+        IUniswapV2Router02::new(router_address, self.evm.client.provider.clone())
     }
 
     /// Creates a V3 router instance for the specified address
@@ -64,7 +62,7 @@ impl Router {
         &self,
         router_address: Address,
     ) -> ISwapRouter<Provider<ethers::providers::Http>> {
-        ISwapRouter::new(router_address, self.client.provider.clone())
+        ISwapRouter::new(router_address, self.evm.client.provider.clone())
     }
 }
 
@@ -101,7 +99,7 @@ pub struct SwapSplit {
 
 /// Smart router that finds optimal swap routes across Uniswap versions
 pub struct SmartRouter {
-    client: Arc<EvmClient>,
+    evm: Arc<Evm>,
 }
 
 impl SmartRouter {
@@ -115,11 +113,11 @@ impl SmartRouter {
     /// use std::sync::Arc;
     /// use crate::{EvmClient, router::SmartRouter};
     ///
-    /// let client = Arc::new(EvmClient::new(EvmType::Ethereum).await?);
+    /// let client = Arc::new(Evm::new(EvmType::Ethereum).await?);
     /// let smart_router = SmartRouter::new(client);
     /// ```
-    pub fn new(client: Arc<EvmClient>) -> Self {
-        Self { client }
+    pub fn new(evm: Arc<Evm>) -> Self {
+        Self { evm: evm }
     }
 
     /// Finds the optimal swap route for a given token pair and amount

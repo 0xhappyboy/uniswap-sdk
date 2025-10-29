@@ -1,15 +1,6 @@
 use ethers::types::Address;
 use std::str::FromStr;
 
-pub mod rpc {
-    pub const ETHEREUM_RPC: &str = "https://reth-ethereum.ithaca.xyz/rpc";
-    pub const BASE_RPC: &str = "https://mainnet.base.org";
-    pub const ARB_RPC: &str = "https://arb1.arbitrum.io/rpc";
-    pub const BSC_RPC: &str = "https://bsc-dataseed.binance.org/";
-    pub const HYPEREVM_RPC: &str = "";
-    pub const PLASMA_RPC: &str = "";
-}
-
 pub mod base {
     pub mod mainnet {
         pub mod dex {
@@ -17,11 +8,6 @@ pub mod base {
                 pub const ROUTER_V2_ADDRESS: &str = "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24";
                 pub const ROUTER_V3_ADDRESS: &str = "0x2626664c2603336E57B271c5C0b26F421741e481";
                 pub const FACTORY_V2_ADDRESS: &str = "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6";
-            }
-        }
-        pub mod lend {
-            pub mod aave {
-                pub const AAVE_ADDRESS: &str = "0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb";
             }
         }
     }
@@ -34,11 +20,6 @@ pub mod arb {
                 pub const ROUTER_V2_ADDRESS: &str = "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506";
                 pub const ROUTER_V3_ADDRESS: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
                 pub const FACTORY_V2_ADDRESS: &str = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4";
-            }
-        }
-        pub mod lend {
-            pub mod aave {
-                pub const AAVE_ADDRESS: &str = "0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb";
             }
         }
     }
@@ -76,10 +57,6 @@ pub mod bsc {
                 pub const ROUTER_V3_ADDRESS: &str = "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2";
                 pub const FACTORY_V2_ADDRESS: &str = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73";
             }
-            pub mod pancakeswap {
-                pub const PANCAKESWAP_ROUTER: &str = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
-                pub const PANCAKESWAP_FACTORY: &str = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73";
-            }
         }
     }
 }
@@ -101,15 +78,6 @@ pub mod optimism {
             pub const USDC: &str = "0x7F5c764cBc14f9669B88837ca1490cCa17c31607";
         }
     }
-}
-
-pub mod chain_ids {
-    pub const ETHEREUM: u64 = 1;
-    pub const POLYGON: u64 = 137;
-    pub const ARBITRUM: u64 = 42161;
-    pub const OPTIMISM: u64 = 10;
-    pub const BASE: u64 = 8453;
-    pub const BSC: u64 = 56;
 }
 
 pub fn parse_address(address_str: &str) -> Result<Address, Box<dyn std::error::Error>> {
