@@ -1,7 +1,7 @@
+use crate::Evm;
 use crate::farm::FarmService;
 use crate::price::Price;
 use crate::types::{FarmPerformance, FarmPool};
-use crate::{Evm, EvmError};
 use ethers::types::Address;
 use ethers::types::U256;
 use evm_client::EvmType;
@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, mpsc};
+use evm_sdk::types::EvmError;
 
 #[derive(Debug, Clone)]
 pub struct LiquidityChangeEvent {

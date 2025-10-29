@@ -1,6 +1,6 @@
 use crate::Arc;
 use crate::Evm;
-use crate::EvmError;
+use evm_sdk::types::EvmError;
 use crate::UniswapConfig;
 use crate::abi::IUniswapV2Factory;
 use ethers::providers::Provider;

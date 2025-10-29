@@ -1,10 +1,11 @@
 use crate::factory::Factory;
 use crate::price::Price;
-use crate::{Evm, EvmError, UniswapConfig};
+use crate::{Evm, UniswapConfig};
 use ethers::types::{Address, U256};
 use evm_client::EvmType;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use evm_sdk::types::EvmError;
 
 pub struct LiquidityPool {
     price: Arc<Price>,

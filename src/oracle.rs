@@ -1,9 +1,9 @@
-use crate::{EvmError, router::UniswapVersion};
+use crate::router::UniswapVersion;
 use ethers::types::Address;
 use evm_sdk::Evm;
-use evm_client::EvmClient;
 use std::sync::Arc;
 use tokio::time::Duration;
+use evm_sdk::types::EvmError;
 
 #[derive(Debug, Clone)]
 pub enum ExternalOracle {

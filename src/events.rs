@@ -1,4 +1,4 @@
-use crate::EvmError;
+use evm_sdk::types::EvmError;
 use crate::price::Price;
 use crate::tool::event_parsers::{
     parse_v4_liquidity_modified_log, parse_v4_pool_initialized_log, parse_v4_swap_log,

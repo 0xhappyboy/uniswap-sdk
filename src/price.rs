@@ -1,4 +1,3 @@
-use crate::EvmError;
 use crate::abi::IUniswapV2Pair;
 use crate::events::UniswapEventManager;
 use crate::factory::Factory;
@@ -14,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use evm_sdk::types::EvmError;
 
 /// Represents price information for a Uniswap V2 pair
 #[derive(Debug, Clone)]

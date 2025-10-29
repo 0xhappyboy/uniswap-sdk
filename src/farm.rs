@@ -1,4 +1,4 @@
-use crate::EvmError;
+use evm_sdk::types::EvmError;
 use crate::abi::{IFarmFactory, IStakingRewards};
 use crate::types::*;
 use ethers::providers::Provider;

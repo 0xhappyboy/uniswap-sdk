@@ -1,6 +1,6 @@
-use crate::EvmError;
 use crate::types::{BurnEvent, MintEvent, PairCreatedEvent, SwapEvent};
 use ethers::types::{Address, U256};
+use evm_sdk::types::EvmError;
 
 pub fn parse_swap_log(log: &ethers::types::Log) -> Result<SwapEvent, EvmError> {
     if log.topics.len() < 3 {

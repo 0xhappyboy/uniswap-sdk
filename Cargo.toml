@@ -1,6 +1,6 @@
 [package]
 name = "uniswap-sdk"
-version = "0.6.0"
+version = "0.6.5"
 edition = "2024"
 authors = ["happyboy <superhappyboy1995@gmail.com>"]
 description = "uniswap sdk, Implemented functions related to interaction with uniswap."

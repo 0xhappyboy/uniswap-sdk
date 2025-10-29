@@ -1,6 +1,6 @@
-use crate::EvmError;
 use ethers::types::{Address, U256};
 use evm_sdk::Evm;
+use evm_sdk::types::EvmError;
 use std::sync::Arc;
 
 /// Represents a pending swap transaction

@@ -13,7 +13,7 @@ use crate::router::Router;
 use crate::tool::address::str_to_address;
 use crate::tool::cal_price_from_sqrt_price_x96;
 use crate::types::{PairCreatedEvent, SwapEvent, TickInfo, V4PoolInfo, V4PositionInfo};
-use ethers::providers::{Middleware, Provider};
+use ethers::providers::Provider;
 use ethers::signers::Signer;
 use ethers::types::Bytes;
 use ethers::types::{Address, H256, U256};
@@ -26,7 +26,7 @@ pub mod farm;
 pub mod oracle;
 pub mod risk;
 pub mod router;
-use crate::types::EvmError;
+use evm_sdk::types::EvmError;
 
 /// Service for interacting with Uniswap V2 and V3 protocols
 pub struct UniswapService {
