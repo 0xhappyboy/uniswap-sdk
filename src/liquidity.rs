@@ -94,15 +94,11 @@ impl LiquidityPoolFinder {
         chain: crate::EvmType,
     ) -> Result<Vec<LiquidityPoolInfo>, EvmError> {
         let mut all_pools = Vec::new();
-
         let v2_pools = self.find_v2_pools(token_address, chain).await?;
         all_pools.extend(v2_pools);
-
         let v3_pools = self.find_v3_pools(token_address, chain).await?;
         all_pools.extend(v3_pools);
-
         all_pools.sort_by(|a, b| b.tvl.partial_cmp(&a.tvl).unwrap());
-
         Ok(all_pools)
     }
 
@@ -113,9 +109,7 @@ impl LiquidityPoolFinder {
     ) -> Result<Vec<LiquidityPoolInfo>, EvmError> {
         let factory_address = UniswapConfig::v2_factory_address(chain)?;
         let mut pools = Vec::new();
-
         let common_tokens = self.get_common_tokens(chain).await;
-
         for &common_token in &common_tokens {
             if common_token == token_address {
                 continue;
@@ -133,7 +127,6 @@ impl LiquidityPoolFinder {
                 }
             }
         }
-
         Ok(pools)
     }
 
@@ -199,6 +192,7 @@ impl LiquidityPoolFinder {
         reserve0_adj + reserve1_adj
     }
 
+    /// Estimates 24-hour trading volume for a pool
     async fn estimate_pool_volume(&self, pair_address: Address) -> f64 {
         let (reserve0, reserve1, _) = match self.price.get_reserves(pair_address).await {
             Ok(reserves) => reserves,
@@ -209,6 +203,7 @@ impl LiquidityPoolFinder {
     }
 
     pub async fn get_lp_token_supply(pair_address: Address) -> Result<U256, EvmError> {
+        todo!();
         Ok(U256::from(1000000))
     }
 
@@ -243,6 +238,23 @@ impl LiquidityPoolFinder {
         }
     }
 
+    /// Finds the liquidity pool with the highest TVL for a token
+    ///
+    /// # Example
+    /// ```rust
+    /// use ethers::types::Address;
+    /// use std::str::FromStr;
+    /// use crate::EvmType;
+    ///
+    /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let finder = create_liquidity_finder();
+    /// let token = Address::from_str("0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984")?;
+    /// if let Some(top_pool) = finder.find_top_liquidity_pool(token, EvmType::Ethereum).await? {
+    ///     println!("Top pool: {} with TVL: ${}", top_pool.pair_address, top_pool.tvl);
+    /// }
+    /// Ok(())
+    /// }
+    /// ```
     pub async fn find_top_liquidity_pool(
         &self,
         token_address: Address,
@@ -252,6 +264,23 @@ impl LiquidityPoolFinder {
         Ok(pools.into_iter().next())
     }
 
+    /// Finds pools with TVL above a specified threshold
+    ///
+    /// # Example
+    /// ```rust
+    /// use ethers::types::Address;
+    /// use std::str::FromStr;
+    /// use crate::EvmType;
+    ///
+    /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let finder = create_liquidity_finder();
+    /// let token = Address::from_str("0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984")?;
+    /// let min_tvl = 1000000.0; // $1M minimum
+    /// let high_tvl_pools = finder.find_pools_by_tvl_threshold(token, EvmType::Ethereum, min_tvl).await?;
+    /// println!("Found {} pools with TVL > ${}", high_tvl_pools.len(), min_tvl);
+    /// Ok(())
+    /// }
+    /// ```
     pub async fn find_pools_by_tvl_threshold(
         &self,
         token_address: Address,
@@ -266,6 +295,21 @@ impl LiquidityPoolFinder {
         Ok(filtered)
     }
 
+    /// Calculates a health score for a liquidity pool (0-100)
+    ///
+    /// # Example
+    /// ```rust
+    /// use ethers::types::Address;
+    /// use std::str::FromStr;
+    ///
+    /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let finder = create_liquidity_finder();
+    /// let pool_address = Address::from_str("0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852")?;
+    /// let health_score = finder.get_pool_health_score(pool_address).await?;
+    /// println!("Pool health score: {}/100", health_score);
+    /// Ok(())
+    /// }
+    /// ```
     pub async fn get_pool_health_score(&self, pool_address: Address) -> Result<f64, EvmError> {
         let pool_info = self.get_v2_pool_details(pool_address).await?;
 
@@ -295,18 +339,34 @@ impl LiquidityPoolFinder {
         Ok(f64::max(score, 0.0))
     }
 
+    /// Provides comprehensive liquidity overview for a token
+    ///
+    /// # Example
+    /// ```rust
+    /// use ethers::types::Address;
+    /// use std::str::FromStr;
+    /// use crate::EvmType;
+    ///
+    /// async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let finder = create_liquidity_finder();
+    /// let token = Address::from_str("0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984")?;
+    /// let overview = finder.get_token_liquidity_overview(token, EvmType::Ethereum).await?;
+    /// println!("Total TVL: ${}", overview.total_tvl);
+    /// println!("Total 24h Volume: ${}", overview.total_volume);
+    /// println!("Number of pools: {}", overview.pool_count);
+    /// Ok(())
+    /// }
+    /// ```
     pub async fn get_token_liquidity_overview(
         &self,
         token_address: Address,
         chain: crate::EvmType,
     ) -> Result<TokenLiquidityOverview, EvmError> {
         let pools = self.find_liquidity_pools(token_address, chain).await?;
-
         let total_tvl: f64 = pools.iter().map(|p| p.tvl).sum();
         let total_volume: f64 = pools.iter().map(|p| p.volume_24h).sum();
         let pool_count = pools.len();
         let top_pool = pools.first().cloned();
-
         Ok(TokenLiquidityOverview {
             token_address,
             total_tvl,
