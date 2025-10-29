@@ -29,7 +29,7 @@ impl LiquidityPool {
             .get_token_info(token1)
             .await
             .unwrap_or((None, 18));
-        let tvl = Price::calculate_tvl(reserve0, reserve1, token0_decimals, token1_decimals);
+        let tvl = Price::cal_tvl(reserve0, reserve1, token0_decimals, token1_decimals);
         let volume_24h = self.price.estimate_24h_volume(pair_address).await;
         let lp_token_supply = LiquidityPoolFinder::get_lp_token_supply(pair_address)
             .await
@@ -152,7 +152,7 @@ impl LiquidityPoolFinder {
         let (token1_symbol, token1_decimals) =
             self.get_token_info(token1).await.unwrap_or((None, 18));
 
-        let tvl = self.calculate_pool_tvl(reserve0, reserve1, token0_decimals, token1_decimals);
+        let tvl = self.cal_pool_tvl(reserve0, reserve1, token0_decimals, token1_decimals);
 
         let volume_24h = self.estimate_pool_volume(pair_address).await;
 
@@ -185,7 +185,7 @@ impl LiquidityPoolFinder {
         Ok((None, 18))
     }
 
-    fn calculate_pool_tvl(&self, reserve0: U256, reserve1: U256, dec0: u8, dec1: u8) -> f64 {
+    fn cal_pool_tvl(&self, reserve0: U256, reserve1: U256, dec0: u8, dec1: u8) -> f64 {
         let reserve0_adj = reserve0.as_u128() as f64 / 10f64.powi(dec0 as i32);
         let reserve1_adj = reserve1.as_u128() as f64 / 10f64.powi(dec1 as i32);
 

@@ -130,51 +130,6 @@ pub struct BurnEvent {
     pub log_index: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SwapDirection {
-    Token0ToToken1,
-    Token1ToToken0,
-    Complex,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct PoolKey {
-    pub currency0: Address,
-    pub currency1: Address,
-    pub fee: u32,
-    pub tick_spacing: i32,
-    pub hooks: Address,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct ModifyPositionParams {
-    pub tick_lower: i32,
-    pub tick_upper: i32,
-    pub liquidity_delta: i128,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct SwapParams {
-    pub zero_for_one: bool,
-    pub amount_specified: i128,
-    pub sqrt_price_limit_x96: U256,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct BalanceDelta {
-    pub amount0: i128,
-    pub amount1: i128,
-}
-
-impl From<(i128, i128)> for BalanceDelta {
-    fn from(tuple: (i128, i128)) -> Self {
-        Self {
-            amount0: tuple.0,
-            amount1: tuple.1,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct V4PoolInfo {
     pub pool_address: Address,
@@ -201,12 +156,6 @@ pub struct V4PositionInfo {
     pub fee_growth_inside1_last_x128: U256,
     pub tokens_owed0: U256,
     pub tokens_owed1: U256,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookConfig {
-    pub hook_address: Address,
-    pub permissions: U256,
 }
 
 #[derive(Debug, Clone)]
@@ -250,26 +199,6 @@ pub struct V4PoolInitializedEvent {
     pub log_index: u64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct HookCalls {
-    pub before_initialize: bool,
-    pub after_initialize: bool,
-    pub before_modify_position: bool,
-    pub after_modify_position: bool,
-    pub before_swap: bool,
-    pub after_swap: bool,
-    pub before_donate: bool,
-    pub after_donate: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Observation {
-    pub block_timestamp: u32,
-    pub tick_cumulative: i64,
-    pub seconds_per_liquidity_cumulative_x128: U256,
-    pub initialized: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TickInfo {
     pub liquidity_gross: U256,
@@ -281,17 +210,18 @@ pub struct TickInfo {
     pub seconds_outside: u32,
     pub initialized: bool,
 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FarmPool {
     pub farm_address: Address,
-    pub staking_token: Address, // LP代币地址
-    pub reward_token: Address,  // 奖励代币地址
+    pub staking_token: Address,
+    pub reward_token: Address,
     pub staking_token_symbol: String,
     pub reward_token_symbol: String,
     pub total_staked: U256,
-    pub reward_rate: U256,     // 每秒奖励
-    pub rewards_duration: u64, // 奖励持续时间(秒)
-    pub period_finish: u64,    // 结束时间
+    pub reward_rate: U256,
+    pub rewards_duration: u64,
+    pub period_finish: u64,
     pub last_update_time: u64,
     pub reward_per_token_stored: U256,
     pub apr: f64,
