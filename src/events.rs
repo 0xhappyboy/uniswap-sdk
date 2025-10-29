@@ -516,13 +516,10 @@ impl TokenPriceEventListener {
         client: &EvmClient,
         pair_address: Address,
     ) -> Result<(Address, Address), EvmError> {
-        // 创建一个临时的 Price 实例来复用现有的代币获取逻辑
         let price_service = Price::new(Arc::new(client.clone()));
-
         // 复用 Price 服务中的方法获取代币信息
         let token0 = price_service.get_token0(pair_address).await?;
         let token1 = price_service.get_token1(pair_address).await?;
-
         Ok((token0, token1))
     }
 
